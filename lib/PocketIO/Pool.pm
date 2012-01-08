@@ -6,6 +6,7 @@ use warnings;
 use Scalar::Util qw(blessed);
 
 use PocketIO::Connection;
+use PocketIO::Socket;
 
 use constant DEBUG => $ENV{POCKETIO_POOL_DEBUG};
 
@@ -63,6 +64,17 @@ sub send {
 
         $conn->socket->send(@_);
     }
+
+    return $self;
+}
+
+sub emit {
+    my $self  = shift;
+    my $event = shift;
+
+    $event = PocketIO::Socket->_build_event_message($event, @_);
+
+    $self->send($event);
 
     return $self;
 }
