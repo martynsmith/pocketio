@@ -1,7 +1,15 @@
 use strict;
 use warnings;
 
-use Test::More tests => 2;
+BEGIN {
+    use Test::More;
+
+    plan skip_all => 'Plack and Twiggy are required to run this test'
+      unless eval { require Plack; require Twiggy; 1 };
+}
+
+plan tests => 2;
+
 use PocketIO::Test;
 
 use AnyEvent;
@@ -77,6 +85,7 @@ test_pocketio(
                   join "\x0d\x0a" =>
                   "POST /socket.io/1/htmlfile/$session_id HTTP/1.0",
                   "Host: $server:$port",
+                  'Content-Length: 3',
                   '',
                   '2::';
 

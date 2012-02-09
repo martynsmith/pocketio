@@ -5,30 +5,24 @@ use warnings;
 
 use base 'PocketIO::Transport::Base';
 
+use PocketIO::Exception;
+
 sub dispatch {
     my $self = shift;
-    my ($cb) = @_;
 
-    my $req  = $self->req;
-    my $name = $self->name;
-
-    PocketIO::Exception->throw(400 => 'Wrong path')
-      unless $req->path =~ m{^/\d+/$name/(\d+)/?$};
-
-    if ($req->method eq 'GET') {
-        return $self->_dispatch_stream($1);
+    if ($self->{env}->{REQUEST_METHOD} eq 'GET') {
+        return $self->_dispatch_stream;
     }
 
-    return $self->_dispatch_send($1);
+    return $self->_dispatch_send;
 }
 
 sub _dispatch_stream {
     my $self = shift;
-    my ($id) = @_;
 
-    my $conn = $self->find_connection($id);
+    my $conn = $self->conn;
 
-    my $handle = $self->_build_handle(fh => $self->env->{'psgix.io'});
+    my $handle = $self->{handle};
 
     return sub {
         my $respond = shift;
@@ -68,9 +62,8 @@ sub _dispatch_stream {
 
 sub _dispatch_send {
     my $self = shift;
-    my ($id) = @_;
 
-    my $conn = $self->find_connection($id);
+    my $conn = $self->conn;
 
     my $data = $self->_get_content;
 
@@ -79,7 +72,17 @@ sub _dispatch_send {
     return [200, ['Content-Length' => 1], ['1']];
 }
 
-sub _get_content { $_[0]->req->content }
+sub _get_content {
+    my $self = shift;
+
+    my $content_length = $self->{env}->{CONTENT_LENGTH} || 0;
+    my $rcount =
+      $self->{env}->{'psgi.input'}->read(my $chunk, $content_length);
+
+    PocketIO::Exception->throw(500) unless $rcount == $content_length;
+
+    return $chunk;
+}
 
 sub _content_type {'text/plain'}
 
@@ -112,15 +115,13 @@ __END__
 
 =head1 NAME
 
-PocketIO::Polling - Basic class for polling transports
+PocketIO::Transport::BasePolling - Basic class for polling transports
 
 =head1 DESCRIPTION
 
 Basic class for polling transports.
 
 =head1 METHODS
-
-=head2 name
 
 =head2 dispatch
 

@@ -1,7 +1,15 @@
 use strict;
 use warnings;
 
-use Test::More tests => 2;
+BEGIN {
+    use Test::More;
+
+    plan skip_all => 'Plack and Twiggy are required to run this test'
+      unless eval { require Plack; require Twiggy; 1 };
+}
+
+plan tests => 2;
+
 use PocketIO::Test;
 
 use AnyEvent;

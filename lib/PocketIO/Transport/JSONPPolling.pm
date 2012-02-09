@@ -5,9 +5,15 @@ use warnings;
 
 use base 'PocketIO::Transport::BasePolling';
 
-sub name {'jsonp-polling'}
+use PocketIO::Util;
 
-sub _get_content { $_[0]->req->body_parameters->get('d') }
+sub _get_content {
+    my $self = shift;
+
+    my $content = $self->SUPER::_get_content;
+
+    return PocketIO::Util::urlencoded_param($content, 'd');
+}
 
 sub _content_type {'text/javascript; charset=UTF-8'}
 
@@ -24,17 +30,14 @@ __END__
 
 =head1 NAME
 
-PocketIO::JSONPPolling - JSONPPolling transport
+PocketIO::Transport::JSONPPolling - JSONPPolling transport
 
 =head1 DESCRIPTION
 
-L<PocketIO::JSONPPolling> is a C<jsonp-polling> transport
-implementation.
+L<PocketIO::Transport::JSONPPolling> is a C<jsonp-polling> transport implementation.
 
 =head1 METHODS
 
-=head2 C<name>
-
-=head2 C<dispatch>
+Inherits all methods from L<PocketIO::Transport::BasePolling>.
 
 =cut

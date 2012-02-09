@@ -3,8 +3,8 @@ package PocketIO::Resource;
 use strict;
 use warnings;
 
-use Plack::Request;
-use Try::Tiny;
+use Protocol::SocketIO::Handshake;
+use Protocol::SocketIO::Path;
 
 use PocketIO::Exception;
 use PocketIO::Transport::Htmlfile;
@@ -12,6 +12,7 @@ use PocketIO::Transport::JSONPPolling;
 use PocketIO::Transport::WebSocket;
 use PocketIO::Transport::XHRMultipart;
 use PocketIO::Transport::XHRPolling;
+use PocketIO::Util;
 
 use constant DEBUG => $ENV{POCKETIO_RESOURCE_DEBUG};
 
@@ -20,6 +21,7 @@ my %TRANSPORTS = (
     'htmlfile'      => 'Htmlfile',
     'jsonp-polling' => 'JSONPPolling',
     'websocket'     => 'WebSocket',
+
 #    'xhr-multipart' => 'XHRMultipart',
     'xhr-polling' => 'XHRPolling',
 );
@@ -50,43 +52,44 @@ sub dispatch {
       unless $method eq 'POST' || $method eq 'GET';
 
     my $path_info = $env->{PATH_INFO};
-    $path_info =~ s{^/}{};
-    $path_info =~ s{/$}{};
 
-    my ($protocol_version, $transport_id, $session_id) = split '/',
-      $path_info, 3;
-    PocketIO::Exception->throw(400 => 'No Socket.IO protocol version found')
-      unless $protocol_version
-          && $protocol_version =~ m/^\d+$/;
+    my $path =
+      Protocol::SocketIO::Path->new(transports => $self->{transports})
+      ->parse($path_info);
+    PocketIO::Exception->throw(400 => 'Cannot parse path') unless $path;
 
-    if (!$transport_id && !$session_id) {
+    if ($path->is_handshake) {
         return $self->_dispatch_handshake($env, $cb);
     }
 
-    PocketIO::Exception->throw(400 => 'Missing transport id and session id')
-      unless $transport_id && $session_id;
-
-    my $conn = $self->_find_connection($session_id);
+    my $conn = $self->_find_connection($path->session_id);
     PocketIO::Exception->throw(400 => 'Unknown session id') unless $conn;
 
     my $transport = $self->_build_transport(
-        $transport_id,
-        env               => $env,
-        pool              => $self->{pool},
-        conn              => $conn,
-        heartbeat_timeout => $self->{heartbeat_timeout},
-        close_timeout     => $self->{close_timeout}
+        $path->transport_type,
+        env           => $env,
+        conn          => $conn,
+        handle        => $self->_build_handle($env),
+        on_disconnect => sub { $self->{pool}->remove_connection($conn) }
     );
 
-    $conn->type($transport->name);
+    $conn->type($path->transport_type);
 
-    return try {
-        $transport->dispatch;
-    }
-    catch {
-        warn $_ if DEBUG;
-        die $_;
+    return eval { $transport->dispatch } or do {
+        my $e = $@;
+        warn $e if DEBUG;
+        die $e;
     };
+}
+
+sub _build_handle {
+    my $self = shift;
+    my ($env) = @_;
+
+    return PocketIO::Handle->new(
+        heartbeat_timeout => $self->{heartbeat_timeout},
+        fh                => $env->{'psgix.io'}
+    );
 }
 
 sub _dispatch_handshake {
@@ -96,14 +99,17 @@ sub _dispatch_handshake {
     return sub {
         my $respond = shift;
 
-        try {
+        eval {
             $self->_build_connection(
                 on_connect => $cb,
                 $self->_on_connection_created($env, $respond)
             );
-        }
-        catch {
-            warn "Handshake error: $_";
+
+            1;
+        } or do {
+            my $e = $@;
+
+            warn "Handshake error: $e";
 
             PocketIO::Exception->throw(503 => 'Service unavailable');
         };
@@ -123,17 +129,20 @@ sub _on_connection_created {
     return sub {
         my $conn = shift;
 
-        my $transports = join ',', @{$self->{transports}};
-
-        my $handshake = join ':', $conn->id, $self->{heartbeat_timeout},
-          $self->{close_timeout}, $transports;
+        my $handshake = Protocol::SocketIO::Handshake->new(
+            session_id        => $conn->id,
+            transports        => $self->{transports},
+            heartbeat_timeout => $self->{heartbeat_timeout},
+            close_timeout     => $self->{close_timeout}
+        )->to_bytes;
 
         my $headers = [];
 
-        my $req = Plack::Request->new($env);
+        my $jsonp =
+          PocketIO::Util::urlencoded_param($env->{QUERY_STRING}, 'jsonp');
 
         # XDomain request
-        if (defined(my $jsonp = $req->param('jsonp'))) {
+        if (defined $jsonp) {
             push @$headers, 'Content-Type' => 'application/javascript';
             $handshake = qq{io.j[$jsonp]("$handshake");};
         }
