@@ -70,6 +70,16 @@ sub type { @_ > 1 ? $_[0]->{type} = $_[1] : $_[0]->{type} }
 
 sub is_connected { $_[0]->{is_connected} }
 
+sub join {
+    my ($self, $room) = @_;
+    $self->pool->join($self, $room);
+}
+
+sub leave {
+    my ($self, $room) = @_;
+    $self->pool->leave($self, $room);
+}
+
 sub connecting {
     my $self = shift;
 

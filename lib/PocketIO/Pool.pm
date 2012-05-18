@@ -17,6 +17,7 @@ sub new {
     bless $self, $class;
 
     $self->{connections} = {};
+    $self->{rooms} = {};
 
     return $self;
 }
@@ -43,6 +44,22 @@ sub add_connection {
     return $cb->($conn);
 }
 
+sub join {
+    my ($self, $conn, $room) = @_;
+
+    $self->{rooms}{$room} //= {};
+    $self->{rooms}{$room}{$conn->id} = $conn;
+}
+
+sub leave {
+    my ($self, $conn, $room) = @_;
+
+    my $id = blessed $conn ? $conn->id : $conn;
+
+    delete $self->{rooms}{$room}{$id};
+    delete $self->{rooms}{$room} unless keys %{$self->{rooms}{$room}};
+}
+
 sub remove_connection {
     my $self = shift;
     my ($conn, $cb) = @_;
@@ -50,6 +67,9 @@ sub remove_connection {
     my $id = blessed $conn ? $conn->id : $conn;
 
     delete $self->{connections}->{$id};
+    foreach my $room ( keys %{$self->{rooms}} ) {
+        $self->leave($conn, $room);
+    }
 
     DEBUG && warn "Removed connection '" . $id . "'\n";
 
@@ -82,6 +102,30 @@ sub emit {
     return $self;
 }
 
+sub room_send {
+    my $self = shift;
+    my $room = shift;
+
+    foreach my $conn ( $self->_room_connections($room) ) {
+        next unless $conn->is_connected;
+        $conn->socket->send(@_);
+    }
+}
+sub room_emit {
+    my $self  = shift;
+    my $room  = shift;
+    my $event = shift;
+
+    $event = PocketIO::Message->new(
+        type => 'event',
+        data => {name => $event, args => [@_]}
+    );
+
+    $self->room_send($room, $event);
+
+    return $self;
+}
+
 sub broadcast {
     my $self    = shift;
     my $invoker = shift;
@@ -94,6 +138,14 @@ sub broadcast {
     }
 
     return $self;
+}
+
+sub _room_connections {
+    my ($self, $room) = @_;
+
+    return unless exists $self->{rooms}{$room};
+
+    return values %{$self->{rooms}{$room}};
 }
 
 sub _connections {

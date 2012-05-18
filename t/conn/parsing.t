@@ -30,6 +30,6 @@ is $conn->_build_message('foo') => '3:::foo';
 is $conn->_build_message({foo => 'bar'}) => '4:::{"foo":"bar"}';
 
 is $conn->_build_message('привет') => '3:::'
-  . encode_utf8('привет');
+  . 'привет';
 is $conn->_build_message({foo => 'привет'}) => '4:::{"foo":"'
-  . encode_utf8('привет') . '"}';
+  . 'привет' . '"}';

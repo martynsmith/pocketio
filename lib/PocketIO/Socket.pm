@@ -81,6 +81,18 @@ sub send {
     return $self;
 }
 
+sub join {
+    my $self = shift;
+
+    $self->{conn}->join(@_);
+}
+
+sub leave {
+    my $self = shift;
+
+    $self->{conn}->leave(@_);
+}
+
 sub broadcast {
     my $self = shift;
 
