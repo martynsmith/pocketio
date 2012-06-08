@@ -75,11 +75,13 @@ sub dispatch {
 
     $conn->type($path->transport_type);
 
-    return eval { $transport->dispatch } or do {
+    my $dispatch = eval { $transport->dispatch } or do {
         my $e = $@;
         warn $e if DEBUG;
         die $e;
     };
+
+    return $dispatch;
 }
 
 sub _build_handle {
@@ -101,7 +103,8 @@ sub _dispatch_handshake {
 
         eval {
             $self->_build_connection(
-                on_connect => $cb,
+                on_connect      => $cb,
+                on_connect_args => [$env],
                 $self->_on_connection_created($env, $respond)
             );
 

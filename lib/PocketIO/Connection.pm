@@ -42,10 +42,9 @@ sub new {
     my $on_connect = delete $self->{on_connect} || sub { };
     $self->{on_connect} = sub {
         my $self = shift;
-        my @args = @_;
 
         eval {
-            $on_connect->($self->{socket}, @args);
+            $on_connect->($self->{socket}, @{$self->{on_connect_args} || []});
             1;
         }
         or do {
@@ -306,7 +305,7 @@ sub parse_message {
 
                 $self->write($message);
             }
-        );
+        ) if defined $self->{socket}->on($name);
     }
     elsif ($message->type eq 'heartbeat') {
 
@@ -330,7 +329,7 @@ sub write {
 
     $bytes = $bytes->to_bytes if blessed $bytes;
 
-    if ($self->on('write')) {
+    if ($self->{on_write}) {
         DEBUG && $self->_debug("Writing '" . substr($bytes, 0, 50) . "'");
         $self->emit('write', $bytes);
     }
